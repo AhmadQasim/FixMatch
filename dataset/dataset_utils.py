@@ -4,8 +4,9 @@ import numpy as np
 from PIL import Image
 from torchvision import datasets
 from torchvision import transforms
-
 from .randaugment import RandAugmentMC
+from torch.utils.data import Dataset
+from sklearn.model_selection import train_test_split
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ def get_cifar10(root, num_labeled, num_expand_x, num_expand_u):
     base_dataset = datasets.CIFAR10(root, train=True, download=True)
 
     train_labeled_idxs, train_unlabeled_idxs = x_u_split(
-        base_dataset.targets, num_labeled, num_expand_x, num_expand_u, num_classes=10)
+        base_dataset.targets, num_labeled, num_expand_x, num_expand_u, num_classes=10, total_size=60000)
 
     train_labeled_dataset = CIFAR10SSL(
         root, train_labeled_idxs, train=True,
@@ -70,7 +71,7 @@ def get_cifar100(root, num_labeled, num_expand_x, num_expand_u):
         root, train=True, download=True)
 
     train_labeled_idxs, train_unlabeled_idxs = x_u_split(
-        base_dataset.targets, num_labeled, num_classes=100)
+        base_dataset.targets, num_labeled, num_classes=100, total_size=60000)
 
     train_labeled_dataset = CIFAR100SSL(
         root, train_labeled_idxs, train=True,
@@ -90,20 +91,53 @@ def get_cifar100(root, num_labeled, num_expand_x, num_expand_u):
     return train_labeled_dataset, train_unlabeled_dataset, test_dataset
 
 
+def get_matek(root, num_labeled, num_expand_x, num_expand_u):
+    transform_labeled = transforms.Compose([
+        transforms.Resize(size=64),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomCrop(size=32,
+                              padding=int(32*0.125),
+                              padding_mode='reflect'),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=normal_mean, std=normal_std)
+    ])
+    transform_val = transforms.Compose([
+        transforms.Resize(size=64),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=normal_mean, std=normal_std)
+    ])
+    base_dataset = datasets.ImageFolder(
+            root, transform=None
+        )
+
+    train_labeled_idxs, train_unlabeled_idxs = x_u_split(
+        base_dataset.targets, num_labeled, num_expand_x, num_expand_u, num_classes=15, total_size=len(base_dataset))
+
+    train_labeled_dataset = MATEKSSL(root, train_labeled_idxs, transform=transform_labeled)
+
+    train_unlabeled_dataset = MATEKSSL(root, train_unlabeled_idxs,
+                                       transform=TransformFix(mean=normal_mean, std=normal_std))
+
+    test_dataset = datasets.ImageFolder(root, transform=transform_val)
+    logger.info("Dataset: MATEK")
+    logger.info(f"Labeled examples: {len(train_labeled_idxs)}"
+                f" Unlabeled examples: {len(train_unlabeled_idxs)}")
+
+    return train_labeled_dataset, train_unlabeled_dataset, test_dataset
+
+
 def x_u_split(labels,
               num_labeled,
               num_expand_x,
               num_expand_u,
-              num_classes):
-    label_per_class = num_labeled // num_classes
-    labels = np.array(labels)
-    labeled_idx = []
-    unlabeled_idx = []
-    for i in range(num_classes):
-        idx = np.where(labels == i)[0]
-        np.random.shuffle(idx)
-        labeled_idx.extend(idx[:label_per_class])
-        unlabeled_idx.extend(idx[label_per_class:])
+              num_classes,
+              total_size):
+    unlabeled_ratio = 1-num_labeled/total_size
+    labeled_idx, unlabeled_idx = train_test_split(
+        np.arange(total_size),
+        test_size=unlabeled_ratio,
+        shuffle=True,
+        stratify=labels)
 
     expand_labeled = num_expand_x // len(labeled_idx)
     expand_unlabeled = num_expand_u // len(unlabeled_idx)
@@ -134,19 +168,24 @@ def x_u_split(labels,
 class TransformFix(object):
     def __init__(self, mean, std):
         self.weak = transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(size=32,
-                                  padding=int(32*0.125),
-                                  padding_mode='reflect')])
-        self.strong = transforms.Compose([
+            transforms.Resize(size=64),
             transforms.RandomHorizontalFlip(),
             transforms.RandomCrop(size=32,
                                   padding=int(32*0.125),
                                   padding_mode='reflect'),
-            RandAugmentMC(n=2, m=10)])
+        ])
+        self.strong = transforms.Compose([
+            transforms.Resize(size=64),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(size=32,
+                                  padding=int(32*0.125),
+                                  padding_mode='reflect'),
+            RandAugmentMC(n=2, m=10)
+        ])
         self.normalize = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std)])
+            transforms.Normalize(mean=mean, std=std)
+        ])
 
     def __call__(self, x):
         weak = self.weak(x)
@@ -200,5 +239,20 @@ class CIFAR100SSL(datasets.CIFAR100):
 
         if self.target_transform is not None:
             target = self.target_transform(target)
+
+        return img, target
+
+
+class MATEKSSL(Dataset):
+    def __init__(self, root, indexes, transform=None):
+        self.transform = transform
+        self.indexes = indexes
+        self.dataset = datasets.ImageFolder(root, transform=self.transform)
+
+    def __len__(self):
+        return len(self.indexes)
+
+    def __getitem__(self, index):
+        img, target = self.dataset[self.indexes[index]]
 
         return img, target

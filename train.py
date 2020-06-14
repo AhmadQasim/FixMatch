@@ -19,13 +19,14 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from dataset.cifar import get_cifar10, get_cifar100
+from dataset.dataset_utils import get_cifar10, get_cifar100, get_matek
 from utils import AverageMeter, accuracy
 
 logger = logging.getLogger(__name__)
 
 DATASET_GETTERS = {'cifar10': get_cifar10,
-                   'cifar100': get_cifar100}
+                   'cifar100': get_cifar100,
+                   'matek': get_matek}
 best_acc = 0
 
 
@@ -67,18 +68,18 @@ def main():
     parser.add_argument('--num-workers', type=int, default=4,
                         help='number of workers')
     parser.add_argument('--dataset', default='cifar10', type=str,
-                        choices=['cifar10', 'cifar100'],
+                        choices=['cifar10', 'cifar100', 'matek'],
                         help='dataset name')
     parser.add_argument('--num-labeled', type=int, default=4000,
                         help='number of labeled data')
     parser.add_argument('--arch', default='wideresnet', type=str,
                         choices=['wideresnet', 'resnext'],
                         help='dataset name')
-    parser.add_argument('--epochs', default=1024, type=int,
+    parser.add_argument('--epochs', default=300, type=int,
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int,
                         help='manual epoch number (useful on restarts)')
-    parser.add_argument('--batch-size', default=64, type=int,
+    parser.add_argument('--batch-size', default=128, type=int,
                         help='train batchsize')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
                         help='initial learning rate')
@@ -92,13 +93,14 @@ def main():
                         help='use EMA model (Exponential moving average)')
     parser.add_argument('--ema-decay', default=0.999, type=float,
                         help='EMA decay rate')
-    parser.add_argument('--mu', default=7, type=int,
+    # doc: changed the mu from 7 to 5 (as indicated in the paper)
+    parser.add_argument('--mu', default=5, type=int,
                         help='coefficient of unlabeled batch size i.e. mu.B from paper')
     parser.add_argument('--lambda-u', default=1, type=float,
                         help='coefficient of unlabeled loss')
     parser.add_argument('--threshold', default=0.95, type=float,
                         help='pseudo label threshold')
-    parser.add_argument('--k-img', default=65536, type=int,
+    parser.add_argument('--k-img', default=32768, type=int,
                         help='number of labeled examples')
     parser.add_argument('--out', default='result',
                         help='directory to output the result')
@@ -171,6 +173,16 @@ def main():
             args.model_depth = 29
             args.model_width = 64
 
+    elif args.dataset == 'matek':
+        args.num_classes = 15
+        if args.arch == 'wideresnet':
+            args.model_depth = 28
+            args.model_width = 2
+        if args.arch == 'resnext':
+            args.model_cardinality = 4
+            args.model_depth = 28
+            args.model_width = 4
+
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -201,7 +213,7 @@ def main():
     # for the unlabeled case, as the unlabeled images have mu.B images for each batch so the total images also should be
     # mu.args.k_img
     labeled_dataset, unlabeled_dataset, test_dataset = DATASET_GETTERS[args.dataset](
-        './data', args.num_labeled, args.k_img, args.k_img * args.mu)
+        './data/matek/AML-Cytomorphology_LMU', args.num_labeled, args.k_img, args.k_img * args.mu)
 
     model = create_model(args)
 
