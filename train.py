@@ -89,11 +89,11 @@ def main():
     parser.add_argument('--nesterov', action='store_true', default=True,
                         help='use nesterov momentum')
     parser.add_argument('--use-ema', action='store_true', default=True,
-                        help='use EMA model')
+                        help='use EMA model (Exponential moving average)')
     parser.add_argument('--ema-decay', default=0.999, type=float,
                         help='EMA decay rate')
     parser.add_argument('--mu', default=7, type=int,
-                        help='coefficient of unlabeled batch size')
+                        help='coefficient of unlabeled batch size i.e. mu.B from paper')
     parser.add_argument('--lambda-u', default=1, type=float,
                         help='coefficient of unlabeled loss')
     parser.add_argument('--threshold', default=0.95, type=float,
@@ -195,6 +195,11 @@ def main():
     if args.local_rank not in [-1, 0]:
         torch.distributed.barrier()
 
+    # doc: args.k_img and args.k_img * args.mu are related to labeled and unlabeled data respectively
+    # if the training dataset is smaller than args.k_img then it is expanded by repeating random data points from
+    # training set to cover up the difference
+    # for the unlabeled case, as the unlabeled images have mu.B images for each batch so the total images also should be
+    # mu.args.k_img
     labeled_dataset, unlabeled_dataset, test_dataset = DATASET_GETTERS[args.dataset](
         './data', args.num_labeled, args.k_img, args.k_img * args.mu)
 
@@ -350,6 +355,8 @@ def train(args, labeled_trainloader, unlabeled_trainloader,
     model.train()
     for batch_idx, (data_x, data_u) in enumerate(train_loader):
         inputs_x, targets_x = data_x
+
+        # doc: the transformation for the unlabeled data includes strong and weak transformations
         (inputs_u_w, inputs_u_s), _ = data_u
         data_time.update(time.time() - end)
         batch_size = inputs_x.shape[0]
@@ -360,8 +367,10 @@ def train(args, labeled_trainloader, unlabeled_trainloader,
         logits_u_w, logits_u_s = logits[batch_size:].chunk(2)
         del logits
 
+        # doc: supervised loss L(s)
         Lx = F.cross_entropy(logits_x, targets_x, reduction='mean')
 
+        # doc: pseudo labeling
         pseudo_label = torch.softmax(logits_u_w.detach_(), dim=-1)
         max_probs, targets_u = torch.max(pseudo_label, dim=-1)
         mask = max_probs.ge(args.threshold).float()
@@ -391,18 +400,22 @@ def train(args, labeled_trainloader, unlabeled_trainloader,
         end = time.time()
         mask_prob = mask.mean().item()
         if not args.no_progress:
-            p_bar.set_description("Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. Loss_x: {loss_x:.4f}. Loss_u: {loss_u:.4f}. Mask: {mask:.4f}. ".format(
-                epoch=epoch + 1,
-                epochs=args.epochs,
-                batch=batch_idx + 1,
-                iter=args.iteration,
-                lr=scheduler.get_last_lr()[0],
-                data=data_time.avg,
-                bt=batch_time.avg,
-                loss=losses.avg,
-                loss_x=losses_x.avg,
-                loss_u=losses_u.avg,
-                mask=mask_prob))
+            p_bar.set_description(
+                "Train Epoch: {epoch}/{epochs:4}. Iter: {batch:4}/{iter:4}. LR: {lr:.6f}. Data: {data:.3f}s. Batch: "
+                "{bt:.3f}s. Loss: {loss:.4f}. Loss_x: {loss_x:.4f}. Loss_u: {loss_u:.4f}. Mask: {mask:.4f}. ".format(
+                    epoch=epoch + 1,
+                    epochs=args.epochs,
+                    batch=batch_idx + 1,
+                    iter=args.iteration,
+                    lr=scheduler.get_last_lr()[0],
+                    data=data_time.avg,
+                    bt=batch_time.avg,
+                    loss=losses.avg,
+                    loss_x=losses_x.avg,
+                    loss_u=losses_u.avg,
+                    mask=mask_prob
+                )
+            )
             p_bar.update()
     if not args.no_progress:
         p_bar.close()
@@ -438,15 +451,18 @@ def test(args, test_loader, model, epoch):
             batch_time.update(time.time() - end)
             end = time.time()
             if not args.no_progress:
-                test_loader.set_description("Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: {loss:.4f}. top1: {top1:.2f}. top5: {top5:.2f}. ".format(
-                    batch=batch_idx + 1,
-                    iter=len(test_loader),
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,
-                ))
+                test_loader.set_description("Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: "
+                                            "{loss:.4f}. top1: {top1:.2f}. top5: {top5:.2f}. "
+                    .format(
+                        batch=batch_idx + 1,
+                        iter=len(test_loader),
+                        data=data_time.avg,
+                        bt=batch_time.avg,
+                        loss=losses.avg,
+                        top1=top1.avg,
+                        top5=top5.avg,
+                    )
+                )
         if not args.no_progress:
             test_loader.close()
 
@@ -456,6 +472,9 @@ def test(args, test_loader, model, epoch):
 
 
 class ModelEMA(object):
+    """
+    This class performs the ema process on the trained model
+    """
     def __init__(self, args, model, decay, device='', resume=''):
         self.ema = deepcopy(model)
         self.ema.eval()
@@ -487,6 +506,8 @@ class ModelEMA(object):
         needs_module = hasattr(model, 'module') and not self.ema_has_module
         with torch.no_grad():
             msd = model.state_dict()
+
+            # perform the exponential averaging
             for k, ema_v in self.ema.state_dict().items():
                 if needs_module:
                     k = 'module.' + k

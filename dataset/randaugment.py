@@ -1,4 +1,4 @@
-# code in this file is adpated from
+# code in this file is adapted from
 # https://github.com/ildoonet/pytorch-randaugment/blob/master/RandAugment/augmentations.py
 # https://github.com/google-research/fixmatch/blob/master/third_party/auto_augment/augmentations.py
 # https://github.com/google-research/fixmatch/blob/master/libml/ctaugment.py
@@ -161,45 +161,6 @@ def fixmatch_augment_pool():
             (TranslateX, 0.3, 0),
             (TranslateY, 0.3, 0)]
     return augs
-
-
-def my_augment_pool():
-    # Test
-    augs = [(AutoContrast, None, None),
-            (Brightness, 1.8, 0.1),
-            (Color, 1.8, 0.1),
-            (Contrast, 1.8, 0.1),
-            (Cutout, 0.2, 0),
-            (Equalize, None, None),
-            (Invert, None, None),
-            (Posterize, 4, 4),
-            (Rotate, 30, 0),
-            (Sharpness, 1.8, 0.1),
-            (ShearX, 0.3, 0),
-            (ShearY, 0.3, 0),
-            (Solarize, 256, 0),
-            (SolarizeAdd, 110, 0),
-            (TranslateX, 0.45, 0),
-            (TranslateY, 0.45, 0)]
-    return augs
-
-
-class RandAugmentPC(object):
-    def __init__(self, n, m):
-        assert n >= 1
-        assert 1 <= m <= 10
-        self.n = n
-        self.m = m
-        self.augment_pool = my_augment_pool()
-
-    def __call__(self, img):
-        ops = random.choices(self.augment_pool, k=self.n)
-        for op, max_v, bias in ops:
-            prob = np.random.uniform(0.2, 0.8)
-            if random.random() + prob >= 1:
-                img = op(img, v=self.m, max_v=max_v, bias=bias)
-        img = CutoutAbs(img, 16)
-        return img
 
 
 class RandAugmentMC(object):

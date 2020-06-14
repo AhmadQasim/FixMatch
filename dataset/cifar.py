@@ -105,13 +105,15 @@ def x_u_split(labels,
         labeled_idx.extend(idx[:label_per_class])
         unlabeled_idx.extend(idx[label_per_class:])
 
-    exapand_labeled = num_expand_x // len(labeled_idx)
-    exapand_unlabeled = num_expand_u // len(unlabeled_idx)
+    expand_labeled = num_expand_x // len(labeled_idx)
+    expand_unlabeled = num_expand_u // len(unlabeled_idx)
     labeled_idx = np.hstack(
-        [labeled_idx for _ in range(exapand_labeled)])
+        [labeled_idx for _ in range(expand_labeled)])
     unlabeled_idx = np.hstack(
-        [unlabeled_idx for _ in range(exapand_unlabeled)])
+        [unlabeled_idx for _ in range(expand_unlabeled)])
 
+    # doc: cover up the difference between the dataset size and the args.k_img for labeled and
+    # args.k_img.args.mu for the unlabeled case
     if len(labeled_idx) < num_expand_x:
         diff = num_expand_x - len(labeled_idx)
         labeled_idx = np.hstack(
@@ -153,16 +155,16 @@ class TransformFix(object):
 
 
 class CIFAR10SSL(datasets.CIFAR10):
-    def __init__(self, root, indexs, train=True,
+    def __init__(self, root, indexes, train=True,
                  transform=None, target_transform=None,
                  download=False):
         super().__init__(root, train=train,
                          transform=transform,
                          target_transform=target_transform,
                          download=download)
-        if indexs is not None:
-            self.data = self.data[indexs]
-            self.targets = np.array(self.targets)[indexs]
+        if indexes is not None:
+            self.data = self.data[indexes]
+            self.targets = np.array(self.targets)[indexes]
 
     def __getitem__(self, index):
         img, target = self.data[index], self.targets[index]
@@ -178,16 +180,16 @@ class CIFAR10SSL(datasets.CIFAR10):
 
 
 class CIFAR100SSL(datasets.CIFAR100):
-    def __init__(self, root, indexs, train=True,
+    def __init__(self, root, indexes, train=True,
                  transform=None, target_transform=None,
                  download=False):
         super().__init__(root, train=train,
                          transform=transform,
                          target_transform=target_transform,
                          download=download)
-        if indexs is not None:
-            self.data = self.data[indexs]
-            self.targets = np.array(self.targets)[indexs]
+        if indexes is not None:
+            self.data = self.data[indexes]
+            self.targets = np.array(self.targets)[indexes]
 
     def __getitem__(self, index):
         img, target = self.data[index], self.targets[index]

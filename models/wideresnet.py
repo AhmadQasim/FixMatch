@@ -6,6 +6,10 @@ import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
+"""
+Courtesy to: https://github.com/xternalz/WideResNet-pytorch
+"""
+
 
 def mish(x):
     """Mish: A Self Regularized Non-Monotonic Neural Activation Function (https://arxiv.org/abs/1908.08681)"""
