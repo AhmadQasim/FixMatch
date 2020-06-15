@@ -14,6 +14,8 @@ cifar10_mean = (0.4914, 0.4822, 0.4465)
 cifar10_std = (0.2471, 0.2435, 0.2616)
 cifar100_mean = (0.5071, 0.4867, 0.4408)
 cifar100_std = (0.2675, 0.2565, 0.2761)
+matek_mean = (0.8205, 0.7279, 0.8360)
+matek_std = (0.1719, 0.2589, 0.1042)
 normal_mean = (0.5, 0.5, 0.5)
 normal_std = (0.5, 0.5, 0.5)
 
@@ -95,16 +97,16 @@ def get_matek(root, num_labeled, num_expand_x, num_expand_u):
     transform_labeled = transforms.Compose([
         transforms.Resize(size=64),
         transforms.RandomHorizontalFlip(),
-        transforms.RandomCrop(size=32,
-                              padding=int(32*0.125),
-                              padding_mode='reflect'),
+        # transforms.RandomCrop(size=32,
+        #                      padding=int(32*0.125),
+        #                      padding_mode='reflect'),
         transforms.ToTensor(),
-        transforms.Normalize(mean=normal_mean, std=normal_std)
+        transforms.Normalize(mean=matek_mean, std=matek_std)
     ])
     transform_val = transforms.Compose([
         transforms.Resize(size=64),
         transforms.ToTensor(),
-        transforms.Normalize(mean=normal_mean, std=normal_std)
+        transforms.Normalize(mean=matek_mean, std=matek_std)
     ])
     base_dataset = datasets.ImageFolder(
             root, transform=None
@@ -116,7 +118,7 @@ def get_matek(root, num_labeled, num_expand_x, num_expand_u):
     train_labeled_dataset = MATEKSSL(root, train_labeled_idxs, transform=transform_labeled)
 
     train_unlabeled_dataset = MATEKSSL(root, train_unlabeled_idxs,
-                                       transform=TransformFix(mean=normal_mean, std=normal_std))
+                                       transform=TransformFix(mean=matek_mean, std=matek_std))
 
     test_dataset = datasets.ImageFolder(root, transform=transform_val)
     logger.info("Dataset: MATEK")
@@ -170,16 +172,16 @@ class TransformFix(object):
         self.weak = transforms.Compose([
             transforms.Resize(size=64),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(size=32,
-                                  padding=int(32*0.125),
-                                  padding_mode='reflect'),
+            # transforms.RandomCrop(size=32,
+            #                      padding=int(32*0.125),
+            #                      padding_mode='reflect'),
         ])
         self.strong = transforms.Compose([
             transforms.Resize(size=64),
             transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(size=32,
-                                  padding=int(32*0.125),
-                                  padding_mode='reflect'),
+            # transforms.RandomCrop(size=32,
+            #                      padding=int(32*0.125),
+            #                      padding_mode='reflect'),
             RandAugmentMC(n=2, m=10)
         ])
         self.normalize = transforms.Compose([

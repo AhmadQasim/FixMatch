@@ -79,7 +79,7 @@ def main():
                         help='number of total epochs to run')
     parser.add_argument('--start-epoch', default=0, type=int,
                         help='manual epoch number (useful on restarts)')
-    parser.add_argument('--batch-size', default=128, type=int,
+    parser.add_argument('--batch-size', default=64, type=int,
                         help='train batchsize')
     parser.add_argument('--lr', '--learning-rate', default=0.03, type=float,
                         help='initial learning rate')
@@ -96,7 +96,7 @@ def main():
     # doc: changed the mu from 7 to 5 (as indicated in the paper)
     parser.add_argument('--mu', default=5, type=int,
                         help='coefficient of unlabeled batch size i.e. mu.B from paper')
-    parser.add_argument('--lambda-u', default=1, type=float,
+    parser.add_argument('--lambda-u', default=2, type=float,
                         help='coefficient of unlabeled loss')
     parser.add_argument('--threshold', default=0.95, type=float,
                         help='pseudo label threshold')
