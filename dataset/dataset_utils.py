@@ -20,7 +20,7 @@ normal_mean = (0.5, 0.5, 0.5)
 normal_std = (0.5, 0.5, 0.5)
 
 
-def get_cifar10(root, num_labeled, num_expand_x, num_expand_u):
+def get_cifar10(root, test_root, num_labeled, num_expand_x, num_expand_u):
     transform_labeled = transforms.Compose([
         transforms.RandomHorizontalFlip(),
         transforms.RandomCrop(size=32,
@@ -50,12 +50,13 @@ def get_cifar10(root, num_labeled, num_expand_x, num_expand_u):
         root, train=False, transform=transform_val, download=False)
     logger.info("Dataset: CIFAR10")
     logger.info(f"Labeled examples: {len(train_labeled_idxs)}"
-                f" Unlabeled examples: {len(train_unlabeled_idxs)}")
+                f" Unlabeled examples: {len(train_unlabeled_idxs)}"
+                f" Test examples: {len(test_dataset)}")
 
     return train_labeled_dataset, train_unlabeled_dataset, test_dataset
 
 
-def get_cifar100(root, num_labeled, num_expand_x, num_expand_u):
+def get_cifar100(root, test_root, num_labeled, num_expand_x, num_expand_u):
 
     transform_labeled = transforms.Compose([
         transforms.RandomHorizontalFlip(),
@@ -88,18 +89,19 @@ def get_cifar100(root, num_labeled, num_expand_x, num_expand_u):
 
     logger.info("Dataset: CIFAR100")
     logger.info(f"Labeled examples: {len(train_labeled_idxs)}"
-                f" Unlabeled examples: {len(train_unlabeled_idxs)}")
+                f" Unlabeled examples: {len(train_unlabeled_idxs)}"
+                f" Test examples: {len(test_dataset)}")
 
     return train_labeled_dataset, train_unlabeled_dataset, test_dataset
 
 
-def get_matek(root, num_labeled, num_expand_x, num_expand_u):
+def get_matek(root, test_root, num_labeled, num_expand_x, num_expand_u):
     transform_labeled = transforms.Compose([
         transforms.Resize(size=64),
         transforms.RandomHorizontalFlip(),
-        # transforms.RandomCrop(size=32,
-        #                      padding=int(32*0.125),
-        #                      padding_mode='reflect'),
+        transforms.RandomCrop(size=32,
+                              padding=int(32*0.125),
+                              padding_mode='reflect'),
         transforms.ToTensor(),
         transforms.Normalize(mean=matek_mean, std=matek_std)
     ])
@@ -120,10 +122,11 @@ def get_matek(root, num_labeled, num_expand_x, num_expand_u):
     train_unlabeled_dataset = MATEKSSL(root, train_unlabeled_idxs,
                                        transform=TransformFix(mean=matek_mean, std=matek_std))
 
-    test_dataset = datasets.ImageFolder(root, transform=transform_val)
+    test_dataset = datasets.ImageFolder(test_root, transform=transform_val)
     logger.info("Dataset: MATEK")
     logger.info(f"Labeled examples: {len(train_labeled_idxs)}"
-                f" Unlabeled examples: {len(train_unlabeled_idxs)}")
+                f" Unlabeled examples: {len(train_unlabeled_idxs)}"
+                f" Test examples: {len(test_dataset)}")
 
     return train_labeled_dataset, train_unlabeled_dataset, test_dataset
 
@@ -172,16 +175,16 @@ class TransformFix(object):
         self.weak = transforms.Compose([
             transforms.Resize(size=64),
             transforms.RandomHorizontalFlip(),
-            # transforms.RandomCrop(size=32,
-            #                      padding=int(32*0.125),
-            #                      padding_mode='reflect'),
+            transforms.RandomCrop(size=32,
+                                  padding=int(32*0.125),
+                                  padding_mode='reflect'),
         ])
         self.strong = transforms.Compose([
             transforms.Resize(size=64),
             transforms.RandomHorizontalFlip(),
-            # transforms.RandomCrop(size=32,
-            #                      padding=int(32*0.125),
-            #                      padding_mode='reflect'),
+            transforms.RandomCrop(size=32,
+                                  padding=int(32*0.125),
+                                  padding_mode='reflect'),
             RandAugmentMC(n=2, m=10)
         ])
         self.normalize = transforms.Compose([

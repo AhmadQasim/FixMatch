@@ -21,6 +21,7 @@ from tqdm import tqdm
 
 from dataset.dataset_utils import get_cifar10, get_cifar100, get_matek
 from utils import AverageMeter, accuracy
+from sklearn.metrics import classification_report
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,8 @@ def main():
                         help="For distributed training: local_rank")
     parser.add_argument('--no-progress', action='store_true',
                         help="don't use progress bar")
+    parser.add_argument('--eval', action='store_true',
+                        help="evaluation only")
 
     args = parser.parse_args()
     global best_acc
@@ -213,7 +216,7 @@ def main():
     # for the unlabeled case, as the unlabeled images have mu.B images for each batch so the total images also should be
     # mu.args.k_img
     labeled_dataset, unlabeled_dataset, test_dataset = DATASET_GETTERS[args.dataset](
-        './data/matek/AML-Cytomorphology_LMU', args.num_labeled, args.k_img, args.k_img * args.mu)
+        './data/matek/train', './data/matek/test', args.num_labeled, args.k_img, args.k_img * args.mu)
 
     model = create_model(args)
 
@@ -286,18 +289,36 @@ def main():
         model = torch.nn.parallel.DistributedDataParallel(
             model, device_ids=[args.local_rank],
             output_device=args.local_rank, find_unused_parameters=True)
-
-    logger.info("***** Running training *****")
+    if args.eval:
+        logger.info("***** Running testing *****")
+    else:
+        logger.info("***** Running training *****")
     logger.info(f"  Task = {args.dataset}@{args.num_labeled}")
     logger.info(f"  Num Epochs = {args.epochs}")
     logger.info(f"  Batch size per GPU = {args.batch_size}")
     logger.info(
-        f"  Total train batch size = {args.batch_size*args.world_size}")
+        f"  Total batch size = {args.batch_size*args.world_size}")
     logger.info(f"  Total optimization steps = {args.total_steps}")
 
     test_accs = []
     model.zero_grad()
     for epoch in range(start_epoch, args.epochs):
+
+        if args.eval:
+            if args.use_ema:
+                test_model = ema_model.ema
+            else:
+                test_model = model
+
+            test_loss, test_acc, report = test(args, test_loader, test_model, epoch)
+
+            if args.local_rank in [-1, 0]:
+                writer.add_scalar('test/1.test_acc', test_acc, epoch)
+                writer.add_scalar('test/2.test_loss', test_loss, epoch)
+
+            print(report)
+
+            break
 
         train_loss, train_loss_x, train_loss_u, mask_prob = train(
             args, labeled_trainloader, unlabeled_trainloader,
@@ -312,7 +333,7 @@ def main():
         else:
             test_model = model
 
-        test_loss, test_acc = test(args, test_loader, test_model, epoch)
+        test_loss, test_acc, _ = test(args, test_loader, test_model, epoch)
 
         if args.local_rank in [-1, 0]:
             writer.add_scalar('train/1.train_loss', train_loss, epoch)
@@ -431,6 +452,7 @@ def train(args, labeled_trainloader, unlabeled_trainloader,
             p_bar.update()
     if not args.no_progress:
         p_bar.close()
+
     return losses.avg, losses_x.avg, losses_u.avg, mask_prob
 
 
@@ -445,7 +467,8 @@ def test(args, test_loader, model, epoch):
     if not args.no_progress:
         test_loader = tqdm(test_loader,
                            disable=args.local_rank not in [-1, 0])
-
+    output = []
+    target = []
     with torch.no_grad():
         for batch_idx, (inputs, targets) in enumerate(test_loader):
             data_time.update(time.time() - end)
@@ -461,6 +484,8 @@ def test(args, test_loader, model, epoch):
             top1.update(prec1.item(), inputs.shape[0])
             top5.update(prec5.item(), inputs.shape[0])
             batch_time.update(time.time() - end)
+            output.extend(torch.argmax(outputs, 1, keepdim=True).tolist())
+            target.extend(targets.tolist())
             end = time.time()
             if not args.no_progress:
                 test_loader.set_description("Test Iter: {batch:4}/{iter:4}. Data: {data:.3f}s. Batch: {bt:.3f}s. Loss: "
@@ -480,7 +505,13 @@ def test(args, test_loader, model, epoch):
 
     logger.info("top-1 acc: {:.2f}".format(top1.avg))
     logger.info("top-5 acc: {:.2f}".format(top5.avg))
-    return losses.avg, top1.avg
+
+    if args.eval:
+        report = classification_report(target, output, zero_division=1)
+    else:
+        report = None
+
+    return losses.avg, top1.avg, report
 
 
 class ModelEMA(object):
